@@ -4,12 +4,16 @@ use std::{
 };
 
 pub struct ThreadPool {
-    sender: mpsc::Sender<Task>,
-    #[allow(dead_code)]
-    workers: Vec<Worker>
+    sender: mpsc::Sender<Signal>,
+    workers: Vec<Worker>,
 }
 
 type Task = Box<dyn FnOnce() + Send + 'static>;
+
+enum Signal {
+    Dispatch(Task),
+    Drop,
+}
 
 impl ThreadPool {
     /// Create a new ThreadPool.
@@ -37,25 +41,55 @@ impl ThreadPool {
     where
         F: FnOnce() + Send + 'static,
     {
-        let job = Box::new(f);
-        self.sender.send(job).unwrap();
+        let task = Box::new(f);
+        self.sender.send(Signal::Dispatch(task)).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        println!("Sending drop signal to all workers.");
+
+        for _ in &self.workers {
+            self.sender.send(Signal::Drop).unwrap();
+        }
+
+        println!("Dropping all workers.");
+
+        for worker in &mut self.workers {
+            if let Some(thread) = worker.thread.take() {
+                println!("Worker {}: Joining...", worker.id);
+                thread.join().unwrap();
+            }
+        }
     }
 }
 
 struct Worker {
-    #[allow(dead_code)]
     id: usize,
-    #[allow(dead_code)]
-    thread: thread::JoinHandle<()>
+    thread: Option<thread::JoinHandle<()>>,
 }
 
-impl Worker  {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Task>>>) -> Worker {
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Signal>>>) -> Worker {
         let thread = thread::spawn(move || loop {
-            let run_task = receiver.lock().unwrap().recv().unwrap();
+            let signal = receiver.lock().unwrap().recv().unwrap();
             println!("Worker {} got a task; executing.", id);
-            run_task();
+            match signal {
+                Signal::Dispatch(run_task) => {
+                    println!("Worker {} got a task; executing.", id);
+                    run_task();
+                }
+                Signal::Drop => {
+                    println!("Worker {} was told to drop task. Exiting loop.", id);
+                    break;
+                }
+            }
         });
-        Worker { id, thread }
+
+        Worker {
+            id,
+            thread: Some(thread),
+        }
     }
 }
