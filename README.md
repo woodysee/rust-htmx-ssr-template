@@ -1,0 +1,1 @@
+# rust-htmx-ssr-template
