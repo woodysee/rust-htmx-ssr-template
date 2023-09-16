@@ -30,16 +30,22 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
-    let get = b"GET / HTTP/1.1\r\n";
-    let get_but_throttled = b"GET /htmx-throttled HTTP/1.1\r\n";
+    let get_default = b"GET / HTTP/1.1\r\n";
+    let get_default_but_throttled = b"GET /htmx-throttled HTTP/1.1\r\n";
+    let static_sample_form_snippet = b"GET /sample-form-snippet HTTP/1.1\r\n";
+    let editable_sample_form_snippet = b"GET /sample-form-snippet/edit HTTP/1.1\r\n";
 
-    let (status_line, filename) = if buffer.starts_with(get) {
-        ("HTTP/1.1 200 OK", "index.html")
-    } else if buffer.starts_with(get_but_throttled) {
+    let (status_line, filename) = if buffer.starts_with(static_sample_form_snippet) {
+        ("HTTP/1.1 200 OK", "src/components/sample-form-snippet/static.html")
+    } else if buffer.starts_with(editable_sample_form_snippet) {
+        ("HTTP/1.1 200 OK", "src/components/sample-form-snippet/editable.html")
+    } else if buffer.starts_with(get_default) {
+        ("HTTP/1.1 200 OK", "src/pages/home/index.html")
+    } else if buffer.starts_with(get_default_but_throttled) {
         thread::sleep(Duration::from_secs(5));
-        ("HTTP/1.1 200 OK", "index.html")
+        ("HTTP/1.1 200 OK", "src/pages/home/index.html")
     } else {
-        ("HTTP/1.1 404 Not Found", "404.html")
+        ("HTTP/1.1 404 Not Found", "src/pages/404.html")
     };
 
     let contents = fs::read_to_string(filename).unwrap();
